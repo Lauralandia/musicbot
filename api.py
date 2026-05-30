@@ -31,7 +31,6 @@ def init(bot, player, find_tracks, play_next):
 
 app = FastAPI(title="MusicBot API")
 PLAYER_PASSWORD = os.getenv("PLAYER_PASSWORD", "")
-print(f"DEBUG password is:'{PLAYER_PASSWORD}'")
 
 # Mount static files for the web UI
 static_dir = os.path.join(os.path.dirname(__file__), "static")

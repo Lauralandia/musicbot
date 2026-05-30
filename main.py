@@ -2,8 +2,11 @@
 main.py — starts both the Discord bot and the FastAPI web server in one process.
 Run with: python main.py
 """
-from dotenv import load_dotenv
-load_dotenv()
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # running in Docker with env vars set directly, dotenv not needed
 
 import asyncio
 import os
