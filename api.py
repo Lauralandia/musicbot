@@ -89,6 +89,18 @@ async def state():
     return _player.to_dict()
 
 
+@app.post("/api/play")
+async def play():
+    guild = get_guild()
+    vc = get_voice_client()
+    if not vc:
+        raise HTTPException(status_code=400, detail="Bot is not in a voice channel")
+    if vc.is_playing():
+        return {"status": "already playing"}
+    asyncio.run_coroutine_threadsafe(_play_next(guild), _bot.loop)
+    return {"status": "playing"}
+
+
 @app.post("/api/pause")
 async def pause():
     vc = get_voice_client()
@@ -153,14 +165,14 @@ async def set_volume(req: VolumeRequest):
 async def queue_add(req: QueueAddRequest):
     results = _find_tracks(req.query)
     if not results:
-        raise HTTPException(status_code=404, detail=f"No tracks found for: {req.query}")
+        raise HTTPException(status_code=404, detail=f"No tracks found")
     for t in results:
         _player.add_to_queue(t)
     guild = get_guild()
     vc = get_voice_client()
     if guild and vc and not vc.is_playing():
         asyncio.run_coroutine_threadsafe(_play_next(guild), _bot.loop)
-    return {"added": len(results), "tracks": [os.path.basename(t) for t in results]}
+    return {"added": len(results)}
 
 
 @app.delete("/api/queue/{index}")
