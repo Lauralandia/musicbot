@@ -4,6 +4,7 @@ Exposes REST endpoints and serves the web UI at /
 """
 import os
 import asyncio
+import hashlib
 from contextlib import asynccontextmanager
 
 import discord
@@ -29,6 +30,8 @@ def init(bot, player, find_tracks, play_next):
 
 
 app = FastAPI(title="MusicBot API")
+PLAYER_PASSWORD = os.getenv("PLAYER_PASSWORD", "")
+print(f"DEBUG password is:'{PLAYER_PASSWORD}'")
 
 # Mount static files for the web UI
 static_dir = os.path.join(os.path.dirname(__file__), "static")
@@ -73,6 +76,13 @@ async def index():
     if os.path.exists(html_path):
         return FileResponse(html_path)
     return HTMLResponse("<h1>MusicBot</h1><p>Static files not found.</p>")
+
+
+@app.post("/api/auth")
+async def auth(req: dict):
+    if not PLAYER_PASSWORD:
+        return {"ok": True}  # no password set, open access
+    return {"ok": req.get("password") == PLAYER_PASSWORD}
 
 
 @app.get("/api/state")

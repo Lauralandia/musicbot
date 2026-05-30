@@ -278,9 +278,64 @@
   .result-item:hover { background: var(--border); }
   .result-item span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .result-item button { padding: .25rem .6rem; font-size: .72rem; }
+
+
+.controls-locked button:not(#btnLoop) {
+    opacity: .3;
+    pointer-events: none;
+}
+
+
+.modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.75);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+}
+.modal-overlay.visible {
+    display: flex;
+}
+.lock-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 2rem;
+    width: 100%;
+    max-width: 320px;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+.lock-card h2 {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: .9rem;
+    color: var(--accent);
+    letter-spacing: .1em;
+}
+.lock-error {
+    font-size: .8rem;
+    color: var(--danger);
+    display: none;
+}
+
+
 </style>
 </head>
 <body>
+
+  <div class="modal-overlay" id="lockOverlay">
+    <div class="lock-card">
+        <h2>// MUSICBOT</h2>
+        <p style="font-size:.85rem;color:var(--muted)">Enter password to control playback</p>
+        <input type="password" id="passwordInput" placeholder="password"
+            onkeydown="if(event.key==='Enter') submitPassword()">
+        <button class="primary" onclick="submitPassword()">Unlock</button>
+        <span class="lock-error" id="lockError">Incorrect password</span>
+    </div>
+</div>
 
 <header>
   <div class="dot" id="statusDot"></div>
@@ -354,12 +409,14 @@
     }
   }
 
-  async function toggleLoop() {
-    const res = await fetch('/api/loop', { method: 'POST' });
-    const data = await res.json();
-    document.getElementById('btnLoop').style.color = data.loop ? 'var(--accent)' : '';
-    fetchState();
-}
+  function toggleLoop() {
+      requireAuth(async () => {
+          const res = await fetch('/api/loop', { method: 'POST' });
+          const data = await res.json();
+          document.getElementById('btnLoop').style.color = data.loop ? 'var(--accent)' : '';
+          fetchState();
+      });
+  }
 
   function updateUI(data) {
     const trackEl = document.getElementById('trackName');
@@ -408,10 +465,10 @@
     fetchState();
   }
 
-  const pause   = () => post('/api/pause');
-  const skip    = () => post('/api/skip');
-  const stop    = () => post('/api/stop');
-  const shuffle = () => post('/api/shuffle');
+  const pause   = () => requireAuth(() => post('/api/pause'));
+  const skip    = () => requireAuth(() => post('/api/skip'));
+  const stop    = () => requireAuth(() => post('/api/stop'));
+  const shuffle = () => requireAuth(() => post('/api/shuffle'));
 
   function onVolumeInput(val) {
     document.getElementById('volumeVal').textContent = val + '%';
@@ -419,10 +476,11 @@
 
   let volDebounce;
   function setVolume(val) {
-    clearTimeout(volDebounce);
-    volDebounce = setTimeout(() => post('/api/volume', { level: parseInt(val) }), 300);
-  }
-
+    requireAuth(() => {
+        clearTimeout(volDebounce);
+        volDebounce = setTimeout(() => post('/api/volume', { level: parseInt(val) }), 300);
+    });
+}
   // ── Search ────────────────────────────────────────────────────────────────
   async function search() {
     const q = document.getElementById('searchInput').value.trim();
@@ -460,9 +518,52 @@
     fetchState();
   }
 
-  // ── Init ──────────────────────────────────────────────────────────────────
-  fetchState();
-  pollInterval = setInterval(fetchState, 3000);
+// ── Auth ─────────────────────────────────────────────────────────────────
+const SESSION_KEY = 'musicbot_authed';
+let pendingAction = null;
+
+function isAuthed() {
+    return sessionStorage.getItem(SESSION_KEY) === '1';
+}
+
+function requireAuth(action) {
+    if (isAuthed()) {
+        action();
+        return;
+    }
+    pendingAction = action;
+    document.getElementById('lockOverlay').classList.add('visible');
+    document.getElementById('passwordInput').focus();
+}
+
+async function submitPassword() {
+    const pw = document.getElementById('passwordInput').value;
+    const res = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: pw })
+    });
+    const data = await res.json();
+    if (data.ok) {
+        sessionStorage.setItem(SESSION_KEY, '1');
+        document.getElementById('lockOverlay').classList.remove('visible');
+        document.getElementById('lockError').style.display = 'none';
+        document.getElementById('passwordInput').value = '';
+        if (pendingAction) {
+            pendingAction();
+            pendingAction = null;
+        }
+    } else {
+        document.getElementById('lockError').style.display = 'block';
+        document.getElementById('passwordInput').value = '';
+        document.getElementById('passwordInput').focus();
+    }
+}
+
+
+// ── Init ──────────────────────────────────────────────────────────────────
+fetchState();
+pollInterval = setInterval(fetchState, 3000);
 </script>
 </body>
 </html>
