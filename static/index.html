@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MusicBot</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500&display=swap');
+
+  :root {
+    --bg: #0e0e0e;
+    --surface: #181818;
+    --border: #2a2a2a;
+    --accent: #1db954;
+    --accent-dim: #158a3e;
+    --text: #e8e8e8;
+    --muted: #666;
+    --danger: #e05252;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'IBM Plex Sans', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 2rem 1rem;
+  }
+
+  header {
+    width: 100%;
+    max-width: 560px;
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    margin-bottom: 2rem;
+  }
+
+  header h1 {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 1.1rem;
+    font-weight: 600;
+    letter-spacing: .05em;
+    color: var(--accent);
+  }
+
+  header .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--muted);
+    transition: background .3s;
+  }
+  header .dot.active { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+
+  .card {
+    width: 100%;
+    max-width: 560px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 1rem;
+  }
+
+  /* Now playing */
+  .now-playing-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: .65rem;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: .5rem;
+  }
+
+  .track-name {
+    font-size: 1.1rem;
+    font-weight: 500;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-height: 1.5rem;
+  }
+
+  .track-name.idle { color: var(--muted); font-style: italic; font-size: .95rem; }
+
+  /* Controls */
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    margin-top: 1.25rem;
+    flex-wrap: wrap;
+  }
+
+  button {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: .8rem;
+    font-weight: 500;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text);
+    padding: .5rem 1rem;
+    cursor: pointer;
+    transition: all .15s;
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+  }
+
+  button:hover { background: var(--border); border-color: #444; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #000; font-weight: 600; }
+  button.primary:hover { background: var(--accent-dim); border-color: var(--accent-dim); }
+  button.danger:hover { background: var(--danger); border-color: var(--danger); color: #fff; }
+  button:disabled { opacity: .35; cursor: not-allowed; }
+
+  /* Volume */
+  .volume-row {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    margin-top: 1rem;
+  }
+
+  .volume-row label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: .7rem;
+    color: var(--muted);
+    min-width: 4.5rem;
+  }
+
+  input[type=range] {
+    flex: 1;
+    accent-color: var(--accent);
+    height: 4px;
+    cursor: pointer;
+  }
+
+  .volume-val {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: .75rem;
+    color: var(--muted);
+    min-width: 2.5rem;
+    text-align: right;
+  }
+
+  /* Search */
+  .search-row {
+    display: flex;
+    gap: .5rem;
+  }
+
+  input[type=text] {
+    flex: 1;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: .85rem;
+    padding: .5rem .75rem;
+    outline: none;
+    transition: border-color .15s;
+  }
+
+  input[type=text]:focus { border-color: var(--accent); }
+
+  /* Queue */
+  .queue-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: .75rem;
+  }
+
+  .queue-header h2 {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: .75rem;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .queue-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: .25rem;
+    max-height: 280px;
+    overflow-y: auto;
+  }
+
+  .queue-list li {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    padding: .45rem .6rem;
+    border-radius: 6px;
+    font-size: .85rem;
+    transition: background .1s;
+  }
+
+  .queue-list li:hover { background: var(--border); }
+
+  .queue-list .idx {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: .7rem;
+    color: var(--muted);
+    min-width: 1.5rem;
+    text-align: right;
+  }
+
+  .queue-list .tname {
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .queue-list .rm {
+    background: none;
+    border: none;
+    color: var(--muted);
+    padding: 0 .2rem;
+    font-size: .9rem;
+    cursor: pointer;
+    border-radius: 4px;
+    line-height: 1;
+  }
+  .queue-list .rm:hover { color: var(--danger); background: transparent; }
+
+  .empty-queue {
+    font-size: .85rem;
+    color: var(--muted);
+    font-style: italic;
+    padding: .5rem 0;
+  }
+
+  /* Status bar */
+  .status-bar {
+    width: 100%;
+    max-width: 560px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: .68rem;
+    color: var(--muted);
+    display: flex;
+    justify-content: space-between;
+    padding: 0 .25rem;
+    margin-top: .5rem;
+  }
+
+  /* Search results dropdown */
+  .results-list {
+    margin-top: .5rem;
+    display: flex;
+    flex-direction: column;
+    gap: .2rem;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+
+  .result-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: .4rem .6rem;
+    border-radius: 6px;
+    font-size: .82rem;
+    cursor: default;
+    gap: .5rem;
+  }
+
+  .result-item:hover { background: var(--border); }
+  .result-item span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .result-item button { padding: .25rem .6rem; font-size: .72rem; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="dot" id="statusDot"></div>
+  <h1>// MUSICBOT</h1>
+</header>
+
+<!-- Now playing + controls -->
+<div class="card">
+  <div class="now-playing-label">NOW PLAYING</div>
+  <div class="track-name idle" id="trackName">Nothing playing</div>
+
+  <div class="controls">
+    <button class="primary" id="btnPause" onclick="pause()">⏸ Pause</button>
+    <button onclick="skip()">⏭ Skip</button>
+    <button onclick="shuffle()">🔀 Shuffle</button>
+    <button id="btnLoop" onclick="toggleLoop()">🔁 Loop</button>
+    <button class="danger" onclick="stop()">⏹ Stop</button>
+  </div>
+
+  <div class="volume-row">
+    <label>VOLUME</label>
+    <input type="range" min="0" max="100" value="50" id="volumeSlider" oninput="onVolumeInput(this.value)" onchange="setVolume(this.value)">
+    <span class="volume-val" id="volumeVal">50%</span>
+  </div>
+</div>
+
+<!-- Search -->
+<div class="card">
+  <div class="now-playing-label" style="margin-bottom:.75rem">SEARCH LIBRARY</div>
+  <div class="search-row">
+    <input type="text" id="searchInput" placeholder="artist, album, track name..." onkeydown="if(event.key==='Enter') search()">
+    <button onclick="search()">Search</button>
+    <button onclick="queueAll()">+ Queue all</button>
+  </div>
+  <div class="results-list" id="searchResults"></div>
+</div>
+
+<!-- Queue -->
+<div class="card">
+  <div class="queue-header">
+    <h2>QUEUE <span id="queueCount" style="color:var(--accent)"></span></h2>
+    <button onclick="shuffle()" style="padding:.3rem .7rem;font-size:.72rem">🔀 Shuffle</button>
+  </div>
+  <ul class="queue-list" id="queueList">
+    <li><span class="empty-queue">Queue is empty</span></li>
+  </ul>
+</div>
+
+<div class="status-bar">
+  <span id="statusText">Connecting...</span>
+  <span id="lastUpdated"></span>
+</div>
+
+<script>
+  let lastQuery = '';
+  let pollInterval;
+
+  // ── State polling ────────────────────────────────────────────────────────
+  async function fetchState() {
+    try {
+      const res = await fetch('/api/state');
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      updateUI(data);
+      document.getElementById('statusDot').classList.add('active');
+      document.getElementById('statusText').textContent = 'Connected';
+      document.getElementById('lastUpdated').textContent = 'Updated ' + new Date().toLocaleTimeString();
+    } catch {
+      document.getElementById('statusDot').classList.remove('active');
+      document.getElementById('statusText').textContent = 'Cannot reach bot';
+    }
+  }
+
+  async function toggleLoop() {
+    const res = await fetch('/api/loop', { method: 'POST' });
+    const data = await res.json();
+    document.getElementById('btnLoop').style.color = data.loop ? 'var(--accent)' : '';
+    fetchState();
+}
+
+  function updateUI(data) {
+    const trackEl = document.getElementById('trackName');
+    const pauseBtn = document.getElementById('btnPause');
+
+    if (data.now_playing) {
+      trackEl.textContent = data.now_playing;
+      trackEl.classList.remove('idle');
+    } else {
+      trackEl.textContent = 'Nothing playing';
+      trackEl.classList.add('idle');
+    }
+
+    pauseBtn.textContent = data.paused ? '▶ Resume' : '⏸ Pause';
+    document.getElementById('btnLoop').style.color = data.loop ? 'var(--accent)' : '';
+
+    const slider = document.getElementById('volumeSlider');
+    const volVal = document.getElementById('volumeVal');
+    if (document.activeElement !== slider) {
+      slider.value = data.volume;
+      volVal.textContent = data.volume + '%';
+    }
+
+    renderQueue(data.queue);
+    document.getElementById('queueCount').textContent = data.queue_count > 0 ? `(${data.queue_count})` : '';
+  }
+
+  function renderQueue(queue) {
+    const list = document.getElementById('queueList');
+    if (!queue || queue.length === 0) {
+      list.innerHTML = '<li><span class="empty-queue">Queue is empty</span></li>';
+      return;
+    }
+    list.innerHTML = queue.map((t, i) => `
+      <li>
+        <span class="idx">${i + 1}</span>
+        <span class="tname" title="${t}">${t}</span>
+        <button class="rm" onclick="removeFromQueue(${i})" title="Remove">✕</button>
+      </li>
+    `).join('');
+  }
+
+  // ── Controls ─────────────────────────────────────────────────────────────
+  async function post(url, body = {}) {
+    await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    fetchState();
+  }
+
+  const pause   = () => post('/api/pause');
+  const skip    = () => post('/api/skip');
+  const stop    = () => post('/api/stop');
+  const shuffle = () => post('/api/shuffle');
+
+  function onVolumeInput(val) {
+    document.getElementById('volumeVal').textContent = val + '%';
+  }
+
+  let volDebounce;
+  function setVolume(val) {
+    clearTimeout(volDebounce);
+    volDebounce = setTimeout(() => post('/api/volume', { level: parseInt(val) }), 300);
+  }
+
+  // ── Search ────────────────────────────────────────────────────────────────
+  async function search() {
+    const q = document.getElementById('searchInput').value.trim();
+    if (!q) return;
+    lastQuery = q;
+    const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+    const data = await res.json();
+    const container = document.getElementById('searchResults');
+
+    if (!data.results.length) {
+      container.innerHTML = '<div style="font-size:.82rem;color:var(--muted);padding:.4rem 0">No results found</div>';
+      return;
+    }
+
+    container.innerHTML = data.results.map((t, i) => `
+      <div class="result-item">
+        <span title="${t}">${t}</span>
+        <button onclick="addToQueue('${t.replace(/'/g, "\\'")}')">+ Queue</button>
+      </div>
+    `).join('');
+  }
+
+  async function addToQueue(trackName) {
+    await post('/api/queue/add', { query: trackName });
+  }
+
+  async function queueAll() {
+    const q = document.getElementById('searchInput').value.trim();
+    if (!q) return;
+    await post('/api/queue/add', { query: q });
+  }
+
+  async function removeFromQueue(index) {
+    await fetch(`/api/queue/${index}`, { method: 'DELETE' });
+    fetchState();
+  }
+
+  // ── Init ──────────────────────────────────────────────────────────────────
+  fetchState();
+  pollInterval = setInterval(fetchState, 3000);
+</script>
+</body>
+</html>

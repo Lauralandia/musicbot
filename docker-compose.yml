@@ -1,0 +1,13 @@
+services:
+  musicbot:
+    build: .
+    container_name: musicbot
+    restart: unless-stopped
+    environment:
+      - DISCORD_TOKEN=${DISCORD_TOKEN}
+      - MUSIC_DIR=/music
+      - WEB_PORT=8080
+    volumes:
+      - /mnt/user/music:/music:ro   # point this at your Unraid music share
+    ports:
+      - "8080:8080"
