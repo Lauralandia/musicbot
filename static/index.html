@@ -278,6 +278,19 @@
   .result-item:hover { background: var(--border); }
   .result-item span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .result-item button { padding: .25rem .6rem; font-size: .72rem; }
+  .result-item .tnum {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: .68rem;
+    color: var(--muted);
+    min-width: 2rem;
+    text-align: right;
+    flex: 0 0 auto;
+  }
+  .result-item.playing {
+    border-left: 2px solid var(--accent);
+    background: rgba(88, 101, 242, 0.08);
+  }
+  .result-item.playing .tnum { color: var(--accent); }
 
 
 .controls-locked button:not(#btnLoop) {
@@ -362,12 +375,15 @@
   </div>
 </div>
 
-<!-- Search -->
+<!-- Library -->
 <div class="card">
-  <div class="now-playing-label" style="margin-bottom:.75rem">SEARCH LIBRARY</div>
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+    <div class="now-playing-label" style="margin-bottom:0">LIBRARY</div>
+    <span id="libraryCount" style="font-family:'IBM Plex Mono',monospace;font-size:.68rem;color:var(--muted)"></span>
+  </div>
   <div class="search-row">
-    <input type="text" id="searchInput" placeholder="artist, album, track name..." onkeydown="if(event.key==='Enter') search()">
-    <button onclick="search()">Search</button>
+    <input type="text" id="searchInput" placeholder="filter tracks..." oninput="filterLibrary()">
+    <button id="btnClearFilter" onclick="clearFilter()" style="display:none" title="Clear filter">✕</button>
     <button onclick="queueAll()">+ Queue all</button>
   </div>
   <div class="results-list" id="searchResults"></div>
@@ -390,8 +406,20 @@
 </div>
 
 <script>
-  let lastQuery = '';
   let pollInterval;
+  let allTracks = [];
+  let filterDebounce;
+  let prevNowPlaying = null;
+
+  // Local state — updated optimistically on actions, synced by poll
+  let state = {
+    now_playing: null,
+    paused: false,
+    loop: false,
+    volume: 50,
+    queue: [],
+    queue_count: 0
+  };
 
   // ── State polling ────────────────────────────────────────────────────────
   async function fetchState() {
@@ -409,39 +437,43 @@
     }
   }
 
-  function toggleLoop() {
-      requireAuth(async () => {
-          const res = await fetch('/api/loop', { method: 'POST' });
-          const data = await res.json();
-          document.getElementById('btnLoop').style.color = data.loop ? 'var(--accent)' : '';
-          fetchState();
-      });
+  function updateUI(data) {
+    Object.assign(state, data);
+    renderState();
   }
 
-  function updateUI(data) {
+  function renderState() {
     const trackEl = document.getElementById('trackName');
     const pauseBtn = document.getElementById('btnPause');
 
-    if (data.now_playing) {
-      trackEl.textContent = data.now_playing;
+    if (state.now_playing) {
+      trackEl.textContent = state.now_playing;
       trackEl.classList.remove('idle');
     } else {
       trackEl.textContent = 'Nothing playing';
       trackEl.classList.add('idle');
     }
 
-    pauseBtn.textContent = data.paused ? '▶ Resume' : '⏸ Pause';
-    document.getElementById('btnLoop').style.color = data.loop ? 'var(--accent)' : '';
+    pauseBtn.textContent = state.paused ? '▶ Resume' : '⏸ Pause';
+    document.getElementById('btnLoop').style.color = state.loop ? 'var(--accent)' : '';
 
     const slider = document.getElementById('volumeSlider');
     const volVal = document.getElementById('volumeVal');
     if (document.activeElement !== slider) {
-      slider.value = data.volume;
-      volVal.textContent = data.volume + '%';
+      slider.value = state.volume;
+      volVal.textContent = state.volume + '%';
     }
 
-    renderQueue(data.queue);
-    document.getElementById('queueCount').textContent = data.queue_count > 0 ? `(${data.queue_count})` : '';
+    renderQueue(state.queue);
+    document.getElementById('queueCount').textContent = state.queue_count > 0 ? `(${state.queue_count})` : '';
+
+    if (state.now_playing !== prevNowPlaying) {
+      prevNowPlaying = state.now_playing;
+      document.querySelectorAll('#searchResults .result-item').forEach(el => {
+        el.classList.toggle('playing', el.dataset.track === state.now_playing);
+        el.querySelector('.tnum').style.color = el.dataset.track === state.now_playing ? 'var(--accent)' : '';
+      });
+    }
   }
 
   function renderQueue(queue) {
@@ -460,15 +492,51 @@
   }
 
   // ── Controls ─────────────────────────────────────────────────────────────
-  async function post(url, body = {}) {
-    await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    fetchState();
+  // Fire-and-forget POST; syncs true state from server when response arrives
+  function post(url, body = {}) {
+    fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      .then(() => fetchState());
   }
 
-  const pause   = () => requireAuth(() => post('/api/pause'));
-  const skip    = () => requireAuth(() => post('/api/skip'));
-  const stop    = () => requireAuth(() => post('/api/stop'));
-  const shuffle = () => requireAuth(() => post('/api/shuffle'));
+  function pause() {
+    requireAuth(() => {
+      state.paused = !state.paused;
+      renderState();
+      post('/api/pause');
+    });
+  }
+
+  function skip() {
+    requireAuth(() => {
+      state.now_playing = state.queue[0] || null;
+      state.queue = state.queue.slice(1);
+      state.queue_count = state.queue.length;
+      renderState();
+      post('/api/skip');
+    });
+  }
+
+  function stop() {
+    requireAuth(() => {
+      state.now_playing = null;
+      state.queue = [];
+      state.queue_count = 0;
+      renderState();
+      post('/api/stop');
+    });
+  }
+
+  function shuffle() {
+    requireAuth(() => post('/api/shuffle'));
+  }
+
+  function toggleLoop() {
+    requireAuth(() => {
+      state.loop = !state.loop;
+      renderState();
+      post('/api/loop');
+    });
+  }
 
   function onVolumeInput(val) {
     document.getElementById('volumeVal').textContent = val + '%';
@@ -477,45 +545,75 @@
   let volDebounce;
   function setVolume(val) {
     requireAuth(() => {
-        clearTimeout(volDebounce);
-        volDebounce = setTimeout(() => post('/api/volume', { level: parseInt(val) }), 300);
+      clearTimeout(volDebounce);
+      volDebounce = setTimeout(() => post('/api/volume', { level: parseInt(val) }), 300);
     });
-}
-  // ── Search ────────────────────────────────────────────────────────────────
-  async function search() {
-    const q = document.getElementById('searchInput').value.trim();
-    if (!q) return;
-    lastQuery = q;
-    const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
-    const data = await res.json();
-    const container = document.getElementById('searchResults');
+  }
 
-    if (!data.results.length) {
-      container.innerHTML = '<div style="font-size:.82rem;color:var(--muted);padding:.4rem 0">No results found</div>';
+  // ── Library ───────────────────────────────────────────────────────────────
+  async function loadLibrary() {
+    const res = await fetch('/api/search?q=&limit=500');
+    const data = await res.json();
+    allTracks = data.results;
+    renderLibrary(allTracks, data.total);
+  }
+
+  function filterLibrary() {
+    const q = document.getElementById('searchInput').value;
+    document.getElementById('btnClearFilter').style.display = q ? '' : 'none';
+    clearTimeout(filterDebounce);
+    filterDebounce = setTimeout(() => {
+      const ql = q.trim().toLowerCase();
+      const filtered = ql ? allTracks.filter(t => t.toLowerCase().includes(ql)) : allTracks;
+      renderLibrary(filtered, allTracks.length);
+    }, 120);
+  }
+
+  function clearFilter() {
+    document.getElementById('searchInput').value = '';
+    document.getElementById('btnClearFilter').style.display = 'none';
+    renderLibrary(allTracks, allTracks.length);
+  }
+
+  function renderLibrary(tracks, total) {
+    const countEl = document.getElementById('libraryCount');
+    countEl.textContent = tracks.length === total
+      ? `${total} tracks`
+      : `${tracks.length} / ${total} tracks`;
+
+    const container = document.getElementById('searchResults');
+    if (!tracks.length) {
+      container.innerHTML = '<div style="font-size:.82rem;color:var(--muted);padding:.4rem 0">No results</div>';
       return;
     }
-
-    container.innerHTML = data.results.map((t, i) => `
-      <div class="result-item">
+    container.innerHTML = tracks.map((t, i) => `
+      <div class="result-item${t === state.now_playing ? ' playing' : ''}" data-track="${t}">
+        <span class="tnum">${i + 1}</span>
         <span title="${t}">${t}</span>
         <button onclick="addToQueue('${t.replace(/'/g, "\\'")}')">+ Queue</button>
       </div>
     `).join('');
   }
 
-  async function addToQueue(trackName) {
-    await post('/api/queue/add', { query: trackName });
+  function addToQueue(trackName) {
+    requireAuth(() => {
+      state.queue.push(trackName);
+      state.queue_count++;
+      renderState();
+      post('/api/queue/add', { query: trackName });
+    });
   }
 
-  async function queueAll() {
+  function queueAll() {
     const q = document.getElementById('searchInput').value.trim();
-    if (!q) return;
-    await post('/api/queue/add', { query: q });
+    requireAuth(() => post('/api/queue/add', { query: q }));
   }
 
-  async function removeFromQueue(index) {
-    await fetch(`/api/queue/${index}`, { method: 'DELETE' });
-    fetchState();
+  function removeFromQueue(index) {
+    state.queue.splice(index, 1);
+    state.queue_count = state.queue.length;
+    renderState();
+    fetch(`/api/queue/${index}`, { method: 'DELETE' }).then(() => fetchState());
   }
 
 // ── Auth ─────────────────────────────────────────────────────────────────
@@ -563,6 +661,7 @@ async function submitPassword() {
 
 // ── Init ──────────────────────────────────────────────────────────────────
 fetchState();
+loadLibrary();
 pollInterval = setInterval(fetchState, 3000);
 </script>
 </body>

@@ -184,6 +184,11 @@ async def queue_remove(index: int):
 
 
 @app.get("/api/search")
-async def search(q: str):
-    results = _find_tracks(q)[:20]
-    return {"results": [os.path.basename(t) for t in results], "count": len(results)}
+async def search(q: str = "", limit: int = 200):
+    limit = min(limit, 500)
+    all_results = _find_tracks(q)
+    return {
+        "results": [os.path.basename(t) for t in all_results[:limit]],
+        "count": min(len(all_results), limit),
+        "total": len(all_results),
+    }
