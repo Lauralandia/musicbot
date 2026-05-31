@@ -44,6 +44,11 @@ def load_playlists() -> list:
     with open(PLAYLISTS_FILE, encoding="utf-8") as f:
         return json.load(f)
 
+
+def save_playlists(playlists: list):
+    with open(PLAYLISTS_FILE, "w", encoding="utf-8") as f:
+        json.dump(playlists, f, indent=2, ensure_ascii=False)
+
 # Mount static files for the web UI
 static_dir = os.path.join(os.path.dirname(__file__), "static")
 if os.path.exists(static_dir):
@@ -247,8 +252,43 @@ async def get_playlists():
             "color": pl.get("color", ""),
             "track_count": len(tracks),
             "found_count": found,
+            "tracks": tracks,
         })
     return {"playlists": result}
+
+
+class PlaylistTrackBody(BaseModel):
+    track: str
+
+
+@app.post("/api/playlists/{playlist_id}/tracks")
+async def add_playlist_track(playlist_id: str, req: PlaylistTrackBody):
+    playlists = load_playlists()
+    playlist = next((p for p in playlists if p["id"] == playlist_id), None)
+    if not playlist:
+        raise HTTPException(status_code=404, detail="Playlist not found")
+    track = req.track.strip()
+    if not track:
+        raise HTTPException(status_code=422, detail="Track name required")
+    tracks = playlist.setdefault("tracks", [])
+    if track not in tracks:
+        tracks.append(track)
+        save_playlists(playlists)
+    return {"status": "ok", "track_count": len(tracks)}
+
+
+@app.delete("/api/playlists/{playlist_id}/tracks/{index}")
+async def remove_playlist_track(playlist_id: str, index: int):
+    playlists = load_playlists()
+    playlist = next((p for p in playlists if p["id"] == playlist_id), None)
+    if not playlist:
+        raise HTTPException(status_code=404, detail="Playlist not found")
+    tracks = playlist.get("tracks", [])
+    if not 0 <= index < len(tracks):
+        raise HTTPException(status_code=404, detail="Index out of range")
+    tracks.pop(index)
+    save_playlists(playlists)
+    return {"status": "ok"}
 
 
 @app.post("/api/playlists/{playlist_id}/play")

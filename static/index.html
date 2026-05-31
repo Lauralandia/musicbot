@@ -324,6 +324,43 @@
     flex-shrink: 0;
   }
 
+  .playlist-item.expanded { flex-direction: column; align-items: stretch; gap: .5rem; }
+  .playlist-item.expanded .pl-row { display: flex; align-items: center; gap: .75rem; }
+
+  .pl-tracks {
+    display: flex;
+    flex-direction: column;
+    gap: .1rem;
+    border-left: 1px solid var(--border);
+    margin-left: .5rem;
+    padding-left: .5rem;
+  }
+
+  .pl-track-item {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    padding: .2rem .3rem;
+    border-radius: 4px;
+    font-size: .78rem;
+  }
+  .pl-track-item:hover { background: var(--border); }
+  .pl-track-item .pl-track-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+
+  select.playlist-select {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: .72rem;
+    padding: .25rem .4rem;
+    cursor: pointer;
+    outline: none;
+    flex-shrink: 0;
+  }
+  select.playlist-select:focus { border-color: var(--accent); }
+
 .controls-locked button:not(#btnLoop) {
     opacity: .3;
     pointer-events: none;
@@ -420,7 +457,10 @@
 
 <!-- Playlists -->
 <div class="card">
-  <div class="now-playing-label" style="margin-bottom:.75rem">PLAYLISTS</div>
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem">
+    <div class="now-playing-label" style="margin-bottom:0">PLAYLISTS</div>
+    <button id="btnEditPlaylists" onclick="toggleEditMode()" style="padding:.25rem .6rem;font-size:.72rem">Edit</button>
+  </div>
   <div class="playlist-list" id="playlistList">
     <div style="font-size:.82rem;color:var(--muted);font-style:italic">Loading...</div>
   </div>
@@ -476,6 +516,8 @@
 <script>
   let pollInterval;
   let allTracks = [];
+  let playlistData = [];
+  let editMode = false;
   let filterDebounce;
   let prevNowPlaying = null;
 
@@ -637,22 +679,73 @@
   }
 
   function renderPlaylists(playlists) {
+    playlistData = playlists || [];
     const container = document.getElementById('playlistList');
-    if (!playlists || !playlists.length) {
+    if (!playlistData.length) {
       container.innerHTML = '<div style="font-size:.82rem;color:var(--muted);font-style:italic">No playlists configured</div>';
       return;
     }
-    container.innerHTML = playlists.map(pl => `
-      <div class="playlist-item" style="border-left-color:${pl.color || 'var(--accent)'}">
-        <div class="pl-info">
-          <div class="pl-name">${pl.name}</div>
-          ${pl.description ? `<div class="pl-desc">${pl.description}</div>` : ''}
+    container.innerHTML = playlistData.map(pl => `
+      <div class="playlist-item${editMode ? ' expanded' : ''}" style="border-left-color:${pl.color || 'var(--accent)'}">
+        <div class="${editMode ? 'pl-row' : 'contents'}">
+          <div class="pl-info">
+            <div class="pl-name">${pl.name}</div>
+            ${pl.description ? `<div class="pl-desc">${pl.description}</div>` : ''}
+          </div>
+          <span class="pl-count">${pl.found_count} / ${pl.track_count} tracks</span>
+          <button onclick="playPlaylist('${pl.id}', '${pl.name.replace(/'/g, "\\'")}', ${pl.found_count})"
+                  ${pl.found_count === 0 ? 'disabled' : ''}>▶ Play</button>
         </div>
-        <span class="pl-count">${pl.found_count} tracks</span>
-        <button onclick="playPlaylist('${pl.id}', '${pl.name.replace(/'/g, "\\'")}', ${pl.found_count})"
-                ${pl.found_count === 0 ? 'disabled' : ''}>▶ Play</button>
+        ${editMode ? `
+          <div class="pl-tracks">
+            ${pl.tracks.length
+              ? pl.tracks.map((t, i) => `
+                  <div class="pl-track-item">
+                    <span class="tnum">${i + 1}</span>
+                    <span class="pl-track-name" title="${t}">${t}</span>
+                    <button class="rm" onclick="removeTrackFromPlaylist('${pl.id}', ${i})" title="Remove">✕</button>
+                  </div>`).join('')
+              : '<div style="font-size:.75rem;color:var(--muted);font-style:italic;padding:.2rem 0">No tracks yet — add from library below</div>'
+            }
+          </div>
+        ` : ''}
       </div>
     `).join('');
+  }
+
+  function toggleEditMode() {
+    requireAuth(() => {
+      editMode = !editMode;
+      const btn = document.getElementById('btnEditPlaylists');
+      btn.textContent = editMode ? 'Done' : 'Edit';
+      btn.className = editMode ? 'primary' : '';
+      renderPlaylists(playlistData);
+      const q = document.getElementById('searchInput').value.trim().toLowerCase();
+      const filtered = q ? allTracks.filter(t => t.toLowerCase().includes(q)) : allTracks;
+      renderLibrary(filtered, allTracks.length);
+    });
+  }
+
+  async function addTrackToPlaylist(trackName, playlistId, selectEl) {
+    if (!playlistId) return;
+    selectEl.value = '';
+    const res = await fetch(`/api/playlists/${playlistId}/tracks`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ track: trackName })
+    });
+    if (res.ok) {
+      const row = selectEl.closest('.result-item');
+      row.style.transition = 'background .1s';
+      row.style.background = 'rgba(88,101,242,.15)';
+      setTimeout(() => row.style.background = '', 800);
+      loadPlaylists();
+    }
+  }
+
+  async function removeTrackFromPlaylist(playlistId, index) {
+    await fetch(`/api/playlists/${playlistId}/tracks/${index}`, { method: 'DELETE' });
+    loadPlaylists();
   }
 
   function playPlaylist(id, name, trackCount) {
@@ -725,13 +818,21 @@
       container.innerHTML = '<div style="font-size:.82rem;color:var(--muted);padding:.4rem 0">No results</div>';
       return;
     }
-    container.innerHTML = tracks.map((t, i) => `
-      <div class="result-item${t === state.now_playing ? ' playing' : ''}" data-track="${t}">
-        <span class="tnum">${i + 1}</span>
-        <span title="${t}">${t}</span>
-        <button onclick="addToQueue('${t.replace(/'/g, "\\'")}')">+ Queue</button>
-      </div>
-    `).join('');
+    const plOptions = playlistData.map(pl => `<option value="${pl.id}">${pl.name}</option>`).join('');
+    container.innerHTML = tracks.map((t, i) => {
+      const esc = t.replace(/'/g, "\\'");
+      return `
+        <div class="result-item${t === state.now_playing ? ' playing' : ''}" data-track="${t}">
+          <span class="tnum">${i + 1}</span>
+          <span title="${t}">${t}</span>
+          ${editMode ? `
+            <select class="playlist-select" onchange="addTrackToPlaylist('${esc}', this.value, this)">
+              <option value="">+ playlist</option>
+              ${plOptions}
+            </select>
+          ` : `<button onclick="addToQueue('${esc}')">+ Queue</button>`}
+        </div>`;
+    }).join('');
   }
 
   function addToQueue(trackName) {
