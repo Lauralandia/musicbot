@@ -6,8 +6,10 @@ services:
     environment:
       - DISCORD_TOKEN=${DISCORD_TOKEN}
       - MUSIC_DIR=/music
+      - DATA_DIR=/data
       - WEB_PORT=8080
     volumes:
-      - /mnt/user/music:/music:ro   # point this at your Unraid music share
+      - /mnt/user/music:/music:ro       # point this at your Unraid music share
+      - /mnt/user/appdata/musicbot:/data # writable share for requests.txt etc.
     ports:
       - "8080:8080"

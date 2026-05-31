@@ -16,6 +16,7 @@ COPY . .
 # Environment variables (override in Unraid Docker template)
 ENV DISCORD_TOKEN=""
 ENV MUSIC_DIR="/music"
+ENV DATA_DIR="/data"
 ENV WEB_HOST="0.0.0.0"
 ENV WEB_PORT="8080"
 
