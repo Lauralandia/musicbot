@@ -518,6 +518,7 @@
   let allTracks = [];
   let playlistData = [];
   let editMode = false;
+  let expandedPlaylists = new Set();
   let filterDebounce;
   let prevNowPlaying = null;
 
@@ -685,37 +686,52 @@
       container.innerHTML = '<div style="font-size:.82rem;color:var(--muted);font-style:italic">No playlists configured</div>';
       return;
     }
-    container.innerHTML = playlistData.map(pl => `
-      <div class="playlist-item${editMode ? ' expanded' : ''}" style="border-left-color:${pl.color || 'var(--accent)'}">
-        <div class="${editMode ? 'pl-row' : 'contents'}">
-          <div class="pl-info">
-            <div class="pl-name">${pl.name}</div>
-            ${pl.description ? `<div class="pl-desc">${pl.description}</div>` : ''}
-          </div>
-          <span class="pl-count">${pl.found_count} / ${pl.track_count} tracks</span>
-          <button onclick="playPlaylist('${pl.id}', '${pl.name.replace(/'/g, "\\'")}', ${pl.found_count})"
-                  ${pl.found_count === 0 ? 'disabled' : ''}>▶ Play</button>
+    container.innerHTML = playlistData.map(pl => {
+      const row = `
+        <div class="pl-info">
+          <div class="pl-name">${pl.name}</div>
+          ${pl.description ? `<div class="pl-desc">${pl.description}</div>` : ''}
         </div>
+        <span class="pl-count">${pl.found_count} / ${pl.track_count} tracks</span>
         ${editMode ? `
-          <div class="pl-tracks">
-            ${pl.tracks.length
-              ? pl.tracks.map((t, i) => `
-                  <div class="pl-track-item">
-                    <span class="tnum">${i + 1}</span>
-                    <span class="pl-track-name" title="${t}">${t}</span>
-                    <button class="rm" onclick="removeTrackFromPlaylist('${pl.id}', ${i})" title="Remove">✕</button>
-                  </div>`).join('')
-              : '<div style="font-size:.75rem;color:var(--muted);font-style:italic;padding:.2rem 0">No tracks yet — add from library below</div>'
-            }
-          </div>
+          <button onclick="togglePlaylistExpand('${pl.id}')" style="padding:.25rem .5rem;font-size:.75rem" title="Show tracks">
+            ${expandedPlaylists.has(pl.id) ? '▾' : '▸'}
+          </button>
         ` : ''}
-      </div>
-    `).join('');
+        <button onclick="playPlaylist('${pl.id}', '${pl.name.replace(/'/g, "\\'")}', ${pl.found_count})"
+                ${pl.found_count === 0 ? 'disabled' : ''}>▶ Play</button>
+      `;
+      const tracks = editMode && expandedPlaylists.has(pl.id) ? `
+        <div class="pl-tracks">
+          ${pl.tracks.length
+            ? pl.tracks.map((t, i) => `
+                <div class="pl-track-item">
+                  <span class="tnum">${i + 1}</span>
+                  <span class="pl-track-name" title="${t}">${t}</span>
+                  <button class="rm" onclick="removeTrackFromPlaylist('${pl.id}', ${i})" title="Remove">✕</button>
+                </div>`).join('')
+            : '<div style="font-size:.75rem;color:var(--muted);font-style:italic;padding:.2rem 0">No tracks yet — add from library below</div>'
+          }
+        </div>
+      ` : '';
+      return `
+        <div class="playlist-item${editMode ? ' expanded' : ''}" style="border-left-color:${pl.color || 'var(--accent)'}">
+          ${editMode ? `<div class="pl-row">${row}</div>${tracks}` : row}
+        </div>
+      `;
+    }).join('');
+  }
+
+  function togglePlaylistExpand(id) {
+    if (expandedPlaylists.has(id)) expandedPlaylists.delete(id);
+    else expandedPlaylists.add(id);
+    renderPlaylists(playlistData);
   }
 
   function toggleEditMode() {
     requireAuth(() => {
       editMode = !editMode;
+      if (!editMode) expandedPlaylists.clear();
       const btn = document.getElementById('btnEditPlaylists');
       btn.textContent = editMode ? 'Done' : 'Edit';
       btn.className = editMode ? 'primary' : '';
@@ -728,18 +744,30 @@
 
   async function addTrackToPlaylist(trackName, playlistId, selectEl) {
     if (!playlistId) return;
+    const playlistName = playlistData.find(p => p.id === playlistId)?.name || playlistId;
+    const defaultOpt = selectEl.options[0];
     selectEl.value = '';
-    const res = await fetch(`/api/playlists/${playlistId}/tracks`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ track: trackName })
-    });
-    if (res.ok) {
-      const row = selectEl.closest('.result-item');
-      row.style.transition = 'background .1s';
-      row.style.background = 'rgba(88,101,242,.15)';
-      setTimeout(() => row.style.background = '', 800);
-      loadPlaylists();
+
+    try {
+      const res = await fetch(`/api/playlists/${playlistId}/tracks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ track: trackName })
+      });
+      if (res.ok) {
+        defaultOpt.text = `✓ ${playlistName}`;
+        selectEl.style.borderColor = 'var(--accent)';
+        setTimeout(() => { defaultOpt.text = '+ playlist'; selectEl.style.borderColor = ''; }, 2500);
+        loadPlaylists();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        defaultOpt.text = `✗ ${err.detail || 'Failed'}`;
+        setTimeout(() => { defaultOpt.text = '+ playlist'; }, 2500);
+      }
+    } catch (e) {
+      console.error('addTrackToPlaylist:', e);
+      defaultOpt.text = '✗ Network error';
+      setTimeout(() => { defaultOpt.text = '+ playlist'; }, 2500);
     }
   }
 

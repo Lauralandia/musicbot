@@ -1,28 +1,28 @@
 [
   {
     "id": "chill",
-    "name": "Chill & Relax",
+    "name": "chillin'",
     "description": "Background music for winding down",
     "color": "#4A9EBF",
     "tracks": []
   },
   {
     "id": "pump",
-    "name": "Pump It Up",
+    "name": "pumpin'",
     "description": "High energy — turn it up",
     "color": "#E05252",
     "tracks": []
   },
   {
     "id": "groovy",
-    "name": "Groovy",
+    "name": "groovin'",
     "description": "Funky rhythms and feel-good vibes",
     "color": "#9B59B6",
     "tracks": []
   },
   {
     "id": "bops",
-    "name": "Bops",
+    "name": "boppin'",
     "description": "Catchy hits and crowd pleasers",
     "color": "#E0529E",
     "tracks": []
