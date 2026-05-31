@@ -33,9 +33,9 @@ def init(bot, player, find_tracks, play_next):
 
 app = FastAPI(title="MusicBot API")
 PLAYER_PASSWORD = os.getenv("PLAYER_PASSWORD", "")
+_data_dir = os.getenv("DATA_DIR", os.path.join(os.path.dirname(__file__), "data"))
 _PLAYLISTS_BUNDLED = os.path.join(os.path.dirname(__file__), "playlists.json")
 PLAYLISTS_FILE = os.path.join(_data_dir, "playlists.json")
-_data_dir = os.getenv("DATA_DIR", os.path.join(os.path.dirname(__file__), "data"))
 REQUESTS_FILE = os.path.join(_data_dir, "requests.txt")
 
 
