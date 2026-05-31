@@ -293,6 +293,37 @@
   .result-item.playing .tnum { color: var(--accent); }
 
 
+  /* Playlists */
+  .playlist-list {
+    display: flex;
+    flex-direction: column;
+    gap: .3rem;
+  }
+
+  .playlist-item {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    padding: .55rem .6rem .55rem .75rem;
+    border-radius: 6px;
+    border-left: 3px solid var(--border);
+    transition: background .1s, border-color .15s;
+  }
+
+  .playlist-item:hover { background: var(--border); }
+
+  .pl-info { flex: 1; min-width: 0; }
+  .pl-name { font-size: .88rem; font-weight: 500; }
+  .pl-desc { font-size: .72rem; color: var(--muted); margin-top: .1rem; }
+
+  .pl-count {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: .68rem;
+    color: var(--muted);
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
 .controls-locked button:not(#btnLoop) {
     opacity: .3;
     pointer-events: none;
@@ -372,6 +403,26 @@
     <label>VOLUME</label>
     <input type="range" min="0" max="100" value="50" id="volumeSlider" oninput="onVolumeInput(this.value)" onchange="setVolume(this.value)">
     <span class="volume-val" id="volumeVal">50%</span>
+  </div>
+</div>
+
+<!-- Playlist confirmation modal -->
+<div class="modal-overlay" id="playlistConfirmOverlay">
+  <div class="lock-card">
+    <h2>Replace queue?</h2>
+    <p id="playlistConfirmText" style="font-size:.85rem;color:var(--muted)"></p>
+    <div style="display:flex;gap:.5rem">
+      <button class="primary" onclick="confirmPlayPlaylist()">▶ Play Now</button>
+      <button onclick="cancelPlayPlaylist()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Playlists -->
+<div class="card">
+  <div class="now-playing-label" style="margin-bottom:.75rem">PLAYLISTS</div>
+  <div class="playlist-list" id="playlistList">
+    <div style="font-size:.82rem;color:var(--muted);font-style:italic">Loading...</div>
   </div>
 </div>
 
@@ -550,6 +601,68 @@
     });
   }
 
+  // ── Playlists ─────────────────────────────────────────────────────────────
+  let pendingPlaylistId = null;
+
+  async function loadPlaylists() {
+    const res = await fetch('/api/playlists');
+    const data = await res.json();
+    renderPlaylists(data.playlists);
+  }
+
+  function renderPlaylists(playlists) {
+    const container = document.getElementById('playlistList');
+    if (!playlists || !playlists.length) {
+      container.innerHTML = '<div style="font-size:.82rem;color:var(--muted);font-style:italic">No playlists configured</div>';
+      return;
+    }
+    container.innerHTML = playlists.map(pl => `
+      <div class="playlist-item" style="border-left-color:${pl.color || 'var(--accent)'}">
+        <div class="pl-info">
+          <div class="pl-name">${pl.name}</div>
+          ${pl.description ? `<div class="pl-desc">${pl.description}</div>` : ''}
+        </div>
+        <span class="pl-count">${pl.found_count} tracks</span>
+        <button onclick="playPlaylist('${pl.id}', '${pl.name.replace(/'/g, "\\'")}', ${pl.found_count})"
+                ${pl.found_count === 0 ? 'disabled' : ''}>▶ Play</button>
+      </div>
+    `).join('');
+  }
+
+  function playPlaylist(id, name, trackCount) {
+    requireAuth(() => {
+      if (state.now_playing || state.queue_count > 0) {
+        pendingPlaylistId = id;
+        document.getElementById('playlistConfirmText').textContent =
+          `"${name}" (${trackCount} tracks) will replace your current queue and start playing immediately.`;
+        document.getElementById('playlistConfirmOverlay').classList.add('visible');
+      } else {
+        executePlayPlaylist(id);
+      }
+    });
+  }
+
+  function confirmPlayPlaylist() {
+    document.getElementById('playlistConfirmOverlay').classList.remove('visible');
+    if (pendingPlaylistId) {
+      executePlayPlaylist(pendingPlaylistId);
+      pendingPlaylistId = null;
+    }
+  }
+
+  function cancelPlayPlaylist() {
+    document.getElementById('playlistConfirmOverlay').classList.remove('visible');
+    pendingPlaylistId = null;
+  }
+
+  function executePlayPlaylist(id) {
+    state.now_playing = null;
+    state.queue = [];
+    state.queue_count = 0;
+    renderState();
+    post(`/api/playlists/${id}/play`);
+  }
+
   // ── Library ───────────────────────────────────────────────────────────────
   async function loadLibrary() {
     const res = await fetch('/api/search?q=&limit=500');
@@ -662,6 +775,7 @@ async function submitPassword() {
 // ── Init ──────────────────────────────────────────────────────────────────
 fetchState();
 loadLibrary();
+loadPlaylists();
 pollInterval = setInterval(fetchState, 3000);
 </script>
 </body>

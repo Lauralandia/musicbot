@@ -3,6 +3,7 @@ FastAPI server — runs alongside the Discord bot in the same process via asynci
 Exposes REST endpoints and serves the web UI at /
 """
 import os
+import json
 import asyncio
 import hashlib
 from contextlib import asynccontextmanager
@@ -31,6 +32,14 @@ def init(bot, player, find_tracks, play_next):
 
 app = FastAPI(title="MusicBot API")
 PLAYER_PASSWORD = os.getenv("PLAYER_PASSWORD", "")
+PLAYLISTS_FILE = os.path.join(os.path.dirname(__file__), "playlists.json")
+
+
+def load_playlists() -> list:
+    if not os.path.exists(PLAYLISTS_FILE):
+        return []
+    with open(PLAYLISTS_FILE, encoding="utf-8") as f:
+        return json.load(f)
 
 # Mount static files for the web UI
 static_dir = os.path.join(os.path.dirname(__file__), "static")
@@ -192,3 +201,54 @@ async def search(q: str = "", limit: int = 200):
         "count": min(len(all_results), limit),
         "total": len(all_results),
     }
+
+
+@app.get("/api/playlists")
+async def get_playlists():
+    playlists = load_playlists()
+    if not playlists:
+        return {"playlists": []}
+    library_basenames = {os.path.basename(p).lower() for p in _find_tracks(None)}
+    result = []
+    for pl in playlists:
+        tracks = pl.get("tracks", [])
+        found = sum(1 for t in tracks if t.lower() in library_basenames)
+        result.append({
+            "id": pl["id"],
+            "name": pl["name"],
+            "description": pl.get("description", ""),
+            "color": pl.get("color", ""),
+            "track_count": len(tracks),
+            "found_count": found,
+        })
+    return {"playlists": result}
+
+
+@app.post("/api/playlists/{playlist_id}/play")
+async def play_playlist(playlist_id: str):
+    playlists = load_playlists()
+    playlist = next((p for p in playlists if p["id"] == playlist_id), None)
+    if not playlist:
+        raise HTTPException(status_code=404, detail="Playlist not found")
+
+    library_map = {os.path.basename(p).lower(): p for p in _find_tracks(None)}
+    tracks = [library_map[t.lower()] for t in playlist.get("tracks", []) if t.lower() in library_map]
+
+    if not tracks:
+        raise HTTPException(status_code=404, detail="No tracks from this playlist found in library")
+
+    guild = get_guild()
+    vc = get_voice_client()
+
+    _player.clear_queue()
+    _player.set_now_playing(None)
+    for t in tracks:
+        _player.add_to_queue(t)
+
+    if guild and vc:
+        if vc.is_playing() or vc.is_paused():
+            vc.stop()  # after() → play_next() will pick up the new queue
+        else:
+            asyncio.run_coroutine_threadsafe(_play_next(guild), _bot.loop)
+
+    return {"status": "playing", "playlist": playlist["name"], "tracks": len(tracks)}
