@@ -184,6 +184,12 @@ async def queue_add(req: QueueAddRequest):
     return {"added": len(results)}
 
 
+@app.delete("/api/queue")
+async def queue_clear():
+    _player.clear_queue()
+    return {"status": "cleared"}
+
+
 @app.delete("/api/queue/{index}")
 async def queue_remove(index: int):
     removed = _player.remove_from_queue(index)

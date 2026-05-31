@@ -444,7 +444,10 @@
 <div class="card">
   <div class="queue-header">
     <h2>QUEUE <span id="queueCount" style="color:var(--accent)"></span></h2>
-    <button onclick="shuffle()" style="padding:.3rem .7rem;font-size:.72rem">🔀 Shuffle</button>
+    <div style="display:flex;gap:.4rem">
+      <button onclick="shuffle()" style="padding:.3rem .7rem;font-size:.72rem">🔀 Shuffle</button>
+      <button onclick="clearQueue()" class="danger" style="padding:.3rem .7rem;font-size:.72rem" title="Clear queue">✕ Clear</button>
+    </div>
   </div>
   <ul class="queue-list" id="queueList">
     <li><span class="empty-queue">Queue is empty</span></li>
@@ -579,6 +582,15 @@
 
   function shuffle() {
     requireAuth(() => post('/api/shuffle'));
+  }
+
+  function clearQueue() {
+    requireAuth(() => {
+      state.queue = [];
+      state.queue_count = 0;
+      renderState();
+      fetch('/api/queue', { method: 'DELETE' }).then(() => fetchState());
+    });
   }
 
   function toggleLoop() {
