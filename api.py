@@ -7,6 +7,7 @@ import json
 import asyncio
 import hashlib
 from contextlib import asynccontextmanager
+from datetime import datetime
 
 import discord
 from fastapi import FastAPI, HTTPException
@@ -33,6 +34,7 @@ def init(bot, player, find_tracks, play_next):
 app = FastAPI(title="MusicBot API")
 PLAYER_PASSWORD = os.getenv("PLAYER_PASSWORD", "")
 PLAYLISTS_FILE = os.path.join(os.path.dirname(__file__), "playlists.json")
+REQUESTS_FILE = os.path.join(os.path.dirname(__file__), "data", "requests.txt")
 
 
 def load_playlists() -> list:
@@ -207,6 +209,24 @@ async def search(q: str = "", limit: int = 200):
         "count": min(len(all_results), limit),
         "total": len(all_results),
     }
+
+
+class TrackRequestBody(BaseModel):
+    track: str
+    name: str = ""
+
+
+@app.post("/api/requests")
+async def submit_request(req: TrackRequestBody):
+    track = req.track.strip()
+    if not track:
+        raise HTTPException(status_code=422, detail="Track name is required")
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+    name_part = f" ({req.name.strip()})" if req.name.strip() else ""
+    os.makedirs(os.path.dirname(REQUESTS_FILE), exist_ok=True)
+    with open(REQUESTS_FILE, "a", encoding="utf-8") as f:
+        f.write(f"[{timestamp}]{name_part}: {track}\n")
+    return {"status": "submitted"}
 
 
 @app.get("/api/playlists")

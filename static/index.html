@@ -454,6 +454,20 @@
   </ul>
 </div>
 
+<!-- Track request -->
+<div class="card">
+  <div class="now-playing-label" style="margin-bottom:.75rem">REQUEST A TRACK</div>
+  <div style="display:flex;flex-direction:column;gap:.5rem">
+    <input type="text" id="reqName" placeholder="your name (optional)" style="font-size:.82rem">
+    <div class="search-row">
+      <input type="text" id="reqTrack" placeholder="artist, song, album..."
+             onkeydown="if(event.key==='Enter') submitRequest()">
+      <button onclick="submitRequest()">Submit</button>
+    </div>
+    <span id="reqStatus" style="font-size:.78rem;display:none"></span>
+  </div>
+</div>
+
 <div class="status-bar">
   <span id="statusText">Connecting...</span>
   <span id="lastUpdated"></span>
@@ -740,6 +754,31 @@
     renderState();
     fetch(`/api/queue/${index}`, { method: 'DELETE' }).then(() => fetchState());
   }
+
+// ── Track requests ───────────────────────────────────────────────────────
+async function submitRequest() {
+  const track = document.getElementById('reqTrack').value.trim();
+  if (!track) return;
+  const name = document.getElementById('reqName').value.trim();
+  const statusEl = document.getElementById('reqStatus');
+
+  const res = await fetch('/api/requests', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ track, name })
+  });
+
+  if (res.ok) {
+    document.getElementById('reqTrack').value = '';
+    statusEl.textContent = 'Request submitted — thanks!';
+    statusEl.style.color = 'var(--accent)';
+  } else {
+    statusEl.textContent = 'Failed to submit, try again.';
+    statusEl.style.color = 'var(--danger)';
+  }
+  statusEl.style.display = 'block';
+  setTimeout(() => statusEl.style.display = 'none', 4000);
+}
 
 // ── Auth ─────────────────────────────────────────────────────────────────
 const SESSION_KEY = 'musicbot_authed';
