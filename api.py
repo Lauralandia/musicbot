@@ -316,9 +316,11 @@ async def play_playlist(playlist_id: str):
         _player.add_to_queue(t)
 
     if guild and vc:
-        if vc.is_playing() or vc.is_paused():
-            vc.stop()  # after() → play_next() will pick up the new queue
-        else:
-            asyncio.run_coroutine_threadsafe(_play_next(guild), _bot.loop)
+        async def _start():
+            if vc.is_playing() or vc.is_paused():
+                vc.stop()
+            else:
+                await _play_next(guild)
+        asyncio.run_coroutine_threadsafe(_start(), _bot.loop)
 
     return {"status": "playing", "playlist": playlist["name"], "tracks": len(tracks)}

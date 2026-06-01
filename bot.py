@@ -51,7 +51,10 @@ async def play_next(guild: discord.Guild):
     def after(error):
         if error:
             print(f"Player error: {error}")
-        asyncio.run_coroutine_threadsafe(play_next(guild), bot.loop)
+        fut = asyncio.run_coroutine_threadsafe(play_next(guild), bot.loop)
+        fut.add_done_callback(
+            lambda f: print(f"play_next raised: {f.exception()}") if not f.cancelled() and f.exception() else None
+        )
 
     vc.play(source, after=after)
 
